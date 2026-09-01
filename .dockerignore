@@ -1,0 +1,47 @@
+# Build/runtime context hygiene for Azure Container Apps / ACR remote builds.
+# Depth-correct globs so nested build artifacts are excluded from the remote
+# build context (avoids the archive/tar: write too long ACR failure mode).
+
+# Secrets and credentials — NEVER bake into an image.
+.env
+.env.*
+!.env.example
+**/*.pem
+**/*.key
+**/secrets*
+**/.copilot/
+
+# Data and runtime state.
+data/
+**/data/
+.copilot/
+**/*.sqlite3
+**/*.sqlite3-shm
+**/*.sqlite3-wal
+
+# azd / git / editor state.
+.azure/
+.git/
+.gitignore
+.omo/
+PowerShellEditorServices.json
+
+# Python build artifacts and caches.
+__pycache__/
+**/__pycache__/
+*.pyc
+**/*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# Docs and tests do not need to be in the runtime image context for the
+# container host build (the validate gate runs them on the host, not in the
+# image). Keeping them out shrinks the remote build context.
+docs/
+tests/

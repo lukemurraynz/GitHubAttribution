@@ -1,0 +1,341 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "languageVersion": "2.0",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.43.8.12551",
+      "templateHash": "13291992867689002158"
+    }
+  },
+  "functions": [
+    {
+      "namespace": "__bicep",
+      "members": {
+        "legalName": {
+          "parameters": [
+            {
+              "type": "string",
+              "name": "base"
+            }
+          ],
+          "output": {
+            "type": "string",
+            "value": "[toLower(replace(replace(take(parameters('base'), 16), '-', ''), '_', ''))]"
+          }
+        }
+      }
+    }
+  ],
+  "parameters": {
+    "name": {
+      "type": "string"
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]"
+    },
+    "environmentName": {
+      "type": "string",
+      "defaultValue": ""
+    },
+    "managedIdentityName": {
+      "type": "string",
+      "defaultValue": ""
+    },
+    "keyVaultName": {
+      "type": "string",
+      "defaultValue": ""
+    },
+    "acrName": {
+      "type": "string",
+      "defaultValue": ""
+    },
+    "storageAccountName": {
+      "type": "string",
+      "defaultValue": ""
+    },
+    "fileShareName": {
+      "type": "string",
+      "defaultValue": ""
+    },
+    "tags": {
+      "type": "object",
+      "defaultValue": {}
+    },
+    "secretName": {
+      "type": "string",
+      "defaultValue": "copilot-cost-ingest-key"
+    },
+    "containerImage": {
+      "type": "string",
+      "metadata": {
+        "description": "Fully qualified container image: registry/repo@sha256 or registry/repo:tag"
+      }
+    }
+  },
+  "variables": {
+    "envName": "[if(not(empty(parameters('environmentName'))), parameters('environmentName'), format('ca-{0}', parameters('name')))]",
+    "miName": "[if(not(empty(parameters('managedIdentityName'))), parameters('managedIdentityName'), format('uami-{0}', parameters('name')))]",
+    "kvName": "[if(not(empty(parameters('keyVaultName'))), parameters('keyVaultName'), format('kv-{0}{1}', __bicep.legalName(parameters('name')), substring(uniqueString(resourceGroup().id, parameters('name')), 0, 6)))]",
+    "acrName_": "[if(not(empty(parameters('acrName'))), parameters('acrName'), format('acr{0}{1}', __bicep.legalName(parameters('name')), substring(uniqueString(resourceGroup().id, parameters('name')), 0, 6)))]",
+    "stgName": "[if(not(empty(parameters('storageAccountName'))), parameters('storageAccountName'), format('st{0}{1}', __bicep.legalName(parameters('name')), substring(uniqueString(resourceGroup().id, parameters('name')), 0, 6)))]",
+    "shareName": "[if(not(empty(parameters('fileShareName'))), parameters('fileShareName'), 'copilotcost')]"
+  },
+  "resources": {
+    "mi": {
+      "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
+      "apiVersion": "2023-01-31",
+      "name": "[variables('miName')]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]"
+    },
+    "acr": {
+      "type": "Microsoft.ContainerRegistry/registries",
+      "apiVersion": "2023-07-01",
+      "name": "[variables('acrName_')]",
+      "location": "[parameters('location')]",
+      "sku": {
+        "name": "Basic"
+      },
+      "properties": {
+        "adminUserEnabled": false
+      },
+      "tags": "[parameters('tags')]"
+    },
+    "acrPullRole": {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.ContainerRegistry/registries', variables('acrName_'))]",
+      "name": "[guid(resourceId('Microsoft.ContainerRegistry/registries', variables('acrName_')), 'acrpull')]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed8-4680-a7ca-43fe172d538d')]",
+        "principalId": "[reference('mi').principalId]",
+        "principalType": "ServicePrincipal"
+      },
+      "dependsOn": [
+        "acr",
+        "mi"
+      ]
+    },
+    "kv": {
+      "type": "Microsoft.KeyVault/vaults",
+      "apiVersion": "2023-07-01",
+      "name": "[variables('kvName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "tenantId": "[subscription().tenantId]",
+        "sku": {
+          "family": "A",
+          "name": "standard"
+        },
+        "enableSoftDelete": true,
+        "enablePurgeProtection": true,
+        "enableRbacAuthorization": true,
+        "softDeleteRetentionInDays": 90
+      },
+      "tags": "[parameters('tags')]"
+    },
+    "kvSecretRole": {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.KeyVault/vaults', variables('kvName'))]",
+      "name": "[guid(resourceId('Microsoft.KeyVault/vaults', variables('kvName')), 'kvsecretsuser')]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')]",
+        "principalId": "[reference('mi').principalId]",
+        "principalType": "ServicePrincipal"
+      },
+      "dependsOn": [
+        "kv",
+        "mi"
+      ]
+    },
+    "stg": {
+      "type": "Microsoft.Storage/storageAccounts",
+      "apiVersion": "2023-05-01",
+      "name": "[variables('stgName')]",
+      "location": "[parameters('location')]",
+      "kind": "StorageV2",
+      "sku": {
+        "name": "Standard_LRS"
+      },
+      "properties": {
+        "minimumTlsVersion": "TLS1_2",
+        "supportsHttpsTrafficOnly": true,
+        "allowBlobPublicAccess": false,
+        "networkAcls": {
+          "defaultAction": "Allow"
+        }
+      },
+      "tags": "[parameters('tags')]"
+    },
+    "share": {
+      "type": "Microsoft.Storage/storageAccounts/fileServices/shares",
+      "apiVersion": "2023-05-01",
+      "name": "[format('{0}/default/{1}', variables('stgName'), variables('shareName'))]"
+    },
+    "env": {
+      "type": "Microsoft.App/managedEnvironments",
+      "apiVersion": "2025-07-01",
+      "name": "[variables('envName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "workloadProfiles": [
+          {
+            "name": "Consumption",
+            "workloadProfileType": "Consumption"
+          }
+        ]
+      },
+      "tags": "[parameters('tags')]"
+    },
+    "app": {
+      "type": "Microsoft.App/containerApps",
+      "apiVersion": "2025-07-01",
+      "name": "[parameters('name')]",
+      "location": "[parameters('location')]",
+      "identity": {
+        "type": "UserAssigned",
+        "userAssignedIdentities": {
+          "[format('{0}', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('miName')))]": {}
+        }
+      },
+      "properties": {
+        "managedEnvironmentId": "[resourceId('Microsoft.App/managedEnvironments', variables('envName'))]",
+        "configuration": {
+          "activeRevisionsMode": "Single",
+          "ingress": {
+            "external": true,
+            "targetPort": 8080,
+            "transport": "http",
+            "allowInsecure": false
+          },
+          "secrets": [
+            {
+              "name": "[parameters('secretName')]",
+              "keyVaultUrl": "[format('{0}secrets/{1}', reference('kv').vaultUri, parameters('secretName'))]",
+              "identity": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('miName'))]"
+            }
+          ],
+          "registries": [
+            {
+              "server": "[reference('acr').loginServer]",
+              "identity": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('miName'))]"
+            }
+          ]
+        },
+        "template": {
+          "containers": [
+            {
+              "image": "[parameters('containerImage')]",
+              "name": "collector",
+              "env": [
+                {
+                  "name": "COPILOT_COST_HOST",
+                  "value": "0.0.0.0"
+                },
+                {
+                  "name": "COPILOT_COST_PORT",
+                  "value": "8080"
+                },
+                {
+                  "name": "COPILOT_COST_DB",
+                  "value": "/data/copilot-cost.sqlite3"
+                },
+                {
+                  "name": "COPILOT_COST_INGEST_KEY",
+                  "secretRef": "[parameters('secretName')]"
+                }
+              ],
+              "probes": [
+                {
+                  "type": "Liveness",
+                  "httpGet": {
+                    "path": "/healthz",
+                    "port": 8080
+                  },
+                  "initialDelaySeconds": 10,
+                  "periodSeconds": 30
+                },
+                {
+                  "type": "Readiness",
+                  "httpGet": {
+                    "path": "/healthz",
+                    "port": 8080
+                  },
+                  "initialDelaySeconds": 5,
+                  "periodSeconds": 10
+                }
+              ],
+              "resources": {
+                "cpu": "[json('0.25')]",
+                "memory": "0.5Gi"
+              },
+              "volumeMounts": [
+                {
+                  "volumeName": "data",
+                  "mountPath": "/data"
+                }
+              ]
+            }
+          ],
+          "scale": {
+            "minReplicas": 0,
+            "maxReplicas": 3
+          },
+          "volumes": [
+            {
+              "name": "data",
+              "storageType": "AzureFile",
+              "storageName": "[format('{0}/default/{1}', variables('stgName'), variables('shareName'))]"
+            }
+          ]
+        }
+      },
+      "tags": "[parameters('tags')]",
+      "dependsOn": [
+        "acr",
+        "env",
+        "kv",
+        "mi",
+        "share"
+      ]
+    }
+  },
+  "outputs": {
+    "appUrl": {
+      "type": "string",
+      "value": "[format('https://{0}', reference('app').configuration.ingress.fqdn)]"
+    },
+    "managedEnvironmentName": {
+      "type": "string",
+      "value": "[variables('envName')]"
+    },
+    "resourceGroupName": {
+      "type": "string",
+      "value": "[resourceGroup().name]"
+    },
+    "managedIdentityId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('miName'))]"
+    },
+    "keyVaultName": {
+      "type": "string",
+      "value": "[variables('kvName')]"
+    },
+    "acrName": {
+      "type": "string",
+      "value": "[variables('acrName_')]"
+    },
+    "storageAccountName": {
+      "type": "string",
+      "value": "[variables('stgName')]"
+    },
+    "fileShareName": {
+      "type": "string",
+      "value": "[variables('shareName')]"
+    }
+  }
+}

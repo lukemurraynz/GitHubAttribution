@@ -36,6 +36,11 @@ COPILOT_COST_TELEMETRY_ENDPOINT=http://collector:8080/v1/copilot/events
 COPILOT_COST_INGEST_KEY=<shared-secret>
 ```
 
+> The hook never stores the ingest key — it is read from the environment and
+> sent only in the `Authorization` header (see `docs/SECURITY.md`). Use an
+> **`https://`** endpoint in production so the key is not transmitted in
+> cleartext.
+
 ### 3. Configure repository → project mapping
 
 Edit `config/repo-projects.json`:

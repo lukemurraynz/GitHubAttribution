@@ -1,0 +1,26 @@
+name: github-copilot-cost-attribution
+metadata:
+  template: github-copilot-cost-attribution@0.1.0
+requiredVersions:
+  azd: ">=1.31.0"
+infra:
+  provider: bicep
+  path: infra
+services:
+  collector:
+    host: containerapp
+    language: python
+    project: .
+    docker:
+      path: ./Dockerfile
+    hooks:
+      preprovision:
+        shell: sh
+        run: ./infra/scripts/validate-prerequisites.sh
+        interactive: false
+        continueOnError: false
+      postdeploy:
+        shell: sh
+        run: ./infra/scripts/postdeploy-verify.sh
+        interactive: false
+        continueOnError: false

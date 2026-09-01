@@ -1,16 +1,19 @@
 from __future__ import annotations
 
+import io
 import json
 import os
 import tempfile
 import unittest
+import urllib.error
 from datetime import date
+from email.message import Message
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from copilot_cost.service.db import connect, ingest_event
 from copilot_cost.service.reconcile import allocate_day, import_ai_credit_day, load_projects
-from copilot_cost.service.github import GitHubClient, GitHubError
+from copilot_cost.service.github import GitHubClient, GitHubError, validate_ai_credit_usage_envelope
 from copilot_cost.service.reporting import report_projects, reconciliation_report
 import copilot_cost.cli.main as cli_main
 import copilot_cost.__main__ as pkg_main
@@ -98,9 +101,42 @@ class PlatformTests(unittest.TestCase):
         self.assertEqual(err.status, 429)
         self.assertNotIn('detail', str(err).lower())
 
+    def test_github_get_json_maps_403_to_permission_message(self):
+        client = GitHubClient(token='test-token')
+        headers = Message()
+        http_error = urllib.error.HTTPError(
+            url='https://api.github.com/test',
+            code=403,
+            msg='Forbidden',
+            hdrs=headers,
+            fp=io.BytesIO(b'{"message":"forbidden"}'),
+        )
+        with patch('urllib.request.urlopen', side_effect=http_error):
+            with self.assertRaises(GitHubError) as cm:
+                client.get_json('/test')
+        self.assertEqual(cm.exception.status, 403)
+        self.assertIn('insufficient permission', str(cm.exception))
+        self.assertIn('Administration read', str(cm.exception))
+
+    def test_validate_ai_credit_usage_envelope_rejects_missing_usage_items(self):
+        with self.assertRaises(GitHubError) as cm:
+            validate_ai_credit_usage_envelope({'timePeriod': {}})
+        self.assertIsNone(cm.exception.status)
+        self.assertIn('usageItems', str(cm.exception))
+
+    def test_validate_ai_credit_usage_envelope_rejects_malformed_usage_items(self):
+        with self.assertRaises(GitHubError) as cm:
+            validate_ai_credit_usage_envelope({'usageItems': 'not-a-list'})
+        self.assertIsNone(cm.exception.status)
+        self.assertIn('usageItems', str(cm.exception))
+
     def test_cli_entry_point_imports_and_gates_on_token(self):
         """The reconcile CLI module and package entry point must import cleanly,
         and must fail fast (not crash) when GITHUB_TOKEN is absent."""
+        # Importing copilot_cost.__main__ at module load is itself the
+        # regression guard: if its entry point stops importing, this module
+        # fails to collect.
+        self.assertTrue(callable(pkg_main.main))
         import sys
         saved_argv = sys.argv
         saved = os.environ.pop('GITHUB_TOKEN', None)
