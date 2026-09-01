@@ -4,9 +4,9 @@ import json
 import os
 from datetime import date
 
-from ..db import connect
-from ..github import GitHubClient
-from ..reconcile import reconcile_range
+from ..service.db import connect
+from ..service.github import GitHubClient
+from ..service.reconcile import reconcile_range
 
 
 def main() -> None:

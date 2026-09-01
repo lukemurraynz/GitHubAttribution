@@ -12,6 +12,8 @@ from copilot_cost.service.db import connect, ingest_event
 from copilot_cost.service.reconcile import allocate_day, import_ai_credit_day, load_projects
 from copilot_cost.service.github import GitHubClient, GitHubError
 from copilot_cost.service.reporting import report_projects, reconciliation_report
+import copilot_cost.cli.main as cli_main
+import copilot_cost.__main__ as pkg_main
 
 
 class PlatformTests(unittest.TestCase):
@@ -95,6 +97,22 @@ class PlatformTests(unittest.TestCase):
         err = GitHubError(429, 'GitHub API request failed with HTTP 429')
         self.assertEqual(err.status, 429)
         self.assertNotIn('detail', str(err).lower())
+
+    def test_cli_entry_point_imports_and_gates_on_token(self):
+        """The reconcile CLI module and package entry point must import cleanly,
+        and must fail fast (not crash) when GITHUB_TOKEN is absent."""
+        import sys
+        saved_argv = sys.argv
+        saved = os.environ.pop('GITHUB_TOKEN', None)
+        try:
+            sys.argv = ['copilot-cost', 'reconcile', '--org', 'acme', '--from', '2026-09-01', '--to', '2026-09-01']
+            with self.assertRaises(SystemExit) as cm:
+                cli_main.main()
+            self.assertIn('GITHUB_TOKEN', str(cm.exception))
+        finally:
+            sys.argv = saved_argv
+            if saved is not None:
+                os.environ['GITHUB_TOKEN'] = saved
 
 
 if __name__ == '__main__':
