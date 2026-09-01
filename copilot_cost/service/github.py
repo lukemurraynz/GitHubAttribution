@@ -8,6 +8,14 @@ from dataclasses import dataclass
 from typing import Any
 
 
+class GitHubError(RuntimeError):
+    """Raised when the GitHub API call fails. Carries the HTTP status code."""
+
+    def __init__(self, status: int | None, message: str) -> None:
+        super().__init__(message)
+        self.status = status
+
+
 @dataclass(frozen=True)
 class GitHubClient:
     token: str
@@ -30,11 +38,15 @@ class GitHubClient:
             with urllib.request.urlopen(req, timeout=60) as response:
                 payload = json.load(response)
                 if not isinstance(payload, dict):
-                    raise RuntimeError('GitHub returned a non-object JSON response')
+                    raise GitHubError(None, 'GitHub returned a non-object JSON response')
                 return payload
         except urllib.error.HTTPError as exc:
             body = exc.read().decode('utf-8', 'replace')
-            raise RuntimeError(f'GitHub API {exc.code}: {body}') from exc
+            # Surface a stable, non-leaky message; keep the status for callers
+            # that need to distinguish retryable (429/5xx) from fatal errors.
+            raise GitHubError(exc.code, f'GitHub API request failed with HTTP {exc.code}') from exc
+        except urllib.error.URLError as exc:
+            raise GitHubError(None, f'GitHub API connection failed: {exc.reason}') from exc
 
     def ai_credit_usage(self, org: str, year: int, month: int, day: int, user: str | None = None) -> dict[str, Any]:
         return self.get_json(

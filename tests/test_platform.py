@@ -4,12 +4,13 @@ import json
 import os
 import tempfile
 import unittest
+from datetime import date
 from pathlib import Path
 from unittest.mock import Mock
 
 from copilot_cost.service.db import connect, ingest_event
 from copilot_cost.service.reconcile import allocate_day, import_ai_credit_day, load_projects
-from copilot_cost.service.github import GitHubClient
+from copilot_cost.service.github import GitHubClient, GitHubError
 from copilot_cost.service.reporting import report_projects, reconciliation_report
 
 
@@ -65,6 +66,35 @@ class PlatformTests(unittest.TestCase):
         self.assertEqual(rows[0]['imported_credits'], 10)
         self.assertEqual(rows[0]['allocated_credits'], 0)
         self.assertEqual(rows[0]['variance_credits'], 10)
+
+    def test_import_ai_credit_skips_malformed_rows_without_crashing(self):
+        """Malformed, null-quantity, or non-credits rows must be skipped, not crash the reconcile."""
+        from copilot_cost.service.reconcile import _as_float
+        self.assertEqual(_as_float(None), 0.0)
+        self.assertEqual(_as_float(''), 0.0)
+        self.assertEqual(_as_float('12.5'), 12.5)
+        self.assertEqual(_as_float('not-a-number'), 0.0)
+
+        payload = {'usageItems': [
+            {'product': 'Copilot', 'sku': 'AI Credits', 'unitType': 'credits', 'netQuantity': None, 'netAmount': None},  # null quantity -> skipped
+            {'product': 'Copilot', 'sku': 'AI Credits', 'unitType': 'seats', 'netQuantity': 5},  # not credits -> skipped
+            'garbage',  # not a dict -> skipped
+            {'product': 'Copilot', 'sku': 'AI Credits', 'model': 'GPT-5', 'unitType': 'credits',
+             'pricePerUnit': '0.01', 'grossQuantity': '100', 'grossAmount': '1', 'netQuantity': '100', 'netAmount': '1'},  # string numerics coerced
+        ]}
+        gh = Mock(spec=GitHubClient)
+        gh.ai_credit_usage.return_value = payload
+        count = import_ai_credit_day(self.con, gh, 'acme', date(2026, 9, 1))
+        self.assertEqual(count, 1)  # only the well-formed credits row imported
+        row = self.con.execute("select quantity, price_per_unit from billing_usage").fetchone()
+        self.assertEqual(row['quantity'], 100.0)
+        self.assertEqual(row['price_per_unit'], 0.01)
+
+    def test_github_error_does_not_leak_response_body(self):
+        """GitHubError should carry a stable message, not the raw upstream body."""
+        err = GitHubError(429, 'GitHub API request failed with HTTP 429')
+        self.assertEqual(err.status, 429)
+        self.assertNotIn('detail', str(err).lower())
 
 
 if __name__ == '__main__':

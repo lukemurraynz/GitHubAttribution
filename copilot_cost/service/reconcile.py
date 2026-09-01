@@ -11,6 +11,21 @@ from typing import Any
 from .github import GitHubClient
 
 
+def _as_float(value: Any, default: float = 0.0) -> float:
+    """Coerce a billing quantity/amount to float, tolerating None and ''.
+
+    GitHub billing payloads occasionally carry null or empty-string numeric
+    fields. Failing cleanly here (skipping the malformed row) is safer than
+    letting a raw ValueError abort the entire reconcile mid-loop.
+    """
+    if value is None or value == '':
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def _usage_id(scope: str, org: str, user: str | None, d: date, item: dict[str, Any]) -> str:
     stable = [scope, org, user, d.isoformat(), item.get('model'), item.get('product'), item.get('sku'), item.get('quantity'), item.get('netQuantity'), item.get('grossQuantity')]
     return hashlib.sha256(json.dumps(stable, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
@@ -19,9 +34,14 @@ def _usage_id(scope: str, org: str, user: str | None, d: date, item: dict[str, A
 def import_ai_credit_day(con: sqlite3.Connection, gh: GitHubClient, org: str, d: date, user: str | None = None) -> int:
     payload = gh.ai_credit_usage(org, d.year, d.month, d.day, user=user)
     count = 0
-    for item in payload.get('usageItems', []):
-        quantity = item.get('netQuantity', item.get('grossQuantity', 0)) or 0
+    for item in payload.get('usageItems') or []:
+        if not isinstance(item, dict):
+            continue
         if str(item.get('unitType', '')).lower() != 'credits':
+            continue
+        quantity = _as_float(item.get('netQuantity', item.get('grossQuantity', 0)))
+        if quantity <= 0:
+            # Nothing billable for this row; do not fabricate a zero-cost record.
             continue
         usage_id = _usage_id('ai_credit', org, user, d, item)
         con.execute(
@@ -31,8 +51,8 @@ def import_ai_credit_day(con: sqlite3.Connection, gh: GitHubClient, org: str, d:
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 usage_id, 'ai_credit', org, user, d.isoformat(), item.get('model'), item.get('product'), item.get('sku'),
-                item.get('unitType'), float(quantity), item.get('pricePerUnit'), item.get('grossAmount'),
-                item.get('discountQuantity'), item.get('discountAmount'), item.get('netAmount'),
+                item.get('unitType'), quantity, _as_float(item.get('pricePerUnit')), _as_float(item.get('grossAmount')),
+                _as_float(item.get('discountQuantity')), _as_float(item.get('discountAmount')), _as_float(item.get('netAmount')),
                 '/organizations/{org}/settings/billing/ai_credit/usage', json.dumps(item, separators=(',', ':')),
             ),
         )
@@ -49,7 +69,9 @@ def import_repo_usage_summary(con: sqlite3.Connection, gh: GitHubClient, org: st
     """
     payload = gh.usage_summary(org, d.year, d.month, d.day, repository=repository, product='Copilot')
     imported = 0
-    for item in payload.get('usageItems', []):
+    for item in payload.get('usageItems') or []:
+        if not isinstance(item, dict):
+            continue
         usage_id = _usage_id('usage_summary_repo', org, repository, d, item)
         con.execute(
             """INSERT OR IGNORE INTO billing_usage
@@ -58,8 +80,8 @@ def import_repo_usage_summary(con: sqlite3.Connection, gh: GitHubClient, org: st
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 usage_id, 'usage_summary_repo', org, None, d.isoformat(), item.get('model'), item.get('product'), item.get('sku'),
-                item.get('unitType'), float(item.get('netQuantity', item.get('grossQuantity', 0)) or 0), item.get('pricePerUnit'),
-                item.get('grossAmount'), item.get('discountQuantity'), item.get('discountAmount'), item.get('netAmount'),
+                item.get('unitType'), _as_float(item.get('netQuantity', item.get('grossQuantity', 0))), _as_float(item.get('pricePerUnit')),
+                _as_float(item.get('grossAmount')), _as_float(item.get('discountQuantity')), _as_float(item.get('discountAmount')), _as_float(item.get('netAmount')),
                 '/organizations/{org}/settings/billing/usage/summary', json.dumps(item, separators=(',', ':')),
             ),
         )
@@ -151,7 +173,7 @@ def reconcile_range(con: sqlite3.Connection, gh: GitHubClient, org: str, start: 
     if project_map:
         load_projects(con, project_map)
     current = start
-    result = {'days': [], 'from': start.isoformat(), 'to': end.isoformat()}
+    result: dict[str, Any] = {'days': [], 'from': start.isoformat(), 'to': end.isoformat()}
     while current <= end:
         imported = 0
         for user in users or [None]:

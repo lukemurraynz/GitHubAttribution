@@ -30,13 +30,21 @@ def _body(handler: BaseHTTPRequestHandler) -> dict:
 class Handler(BaseHTTPRequestHandler):
     server_version = 'CopilotCostAttribution/2.0'
 
-    def _json(self, status: int, payload: object) -> None:
+    def _json(self, status: int, payload: object, extra_headers: dict[str, str] | None = None) -> None:
         body = json.dumps(payload, separators=(',', ':'), default=str).encode()
         self.send_response(status)
         self.send_header('Content-Type', 'application/json')
         self.send_header('Content-Length', str(len(body)))
+        for key, value in (extra_headers or {}).items():
+            self.send_header(key, value)
         self.end_headers()
         self.wfile.write(body)
+
+    def _server_error(self, code: str) -> None:
+        # Do not echo internal exception strings to clients; return a stable
+        # machine-readable code only. Retry-After signals the client the
+        # failure is transient infra, not a permanent contract violation.
+        self._json(503, {'error': code, 'errorCode': code}, {'Retry-After': '60'})
 
     def do_GET(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
@@ -61,12 +69,12 @@ class Handler(BaseHTTPRequestHandler):
             if parsed.path == '/v1/reconciliation':
                 return self._json(200, reconciliation_report(con, start, end))
             return self._json(404, {'error': 'not_found'})
-        except Exception as exc:
-            return self._json(500, {'error': 'query_failed', 'detail': str(exc)})
+        except Exception:
+            return self._server_error('query_failed')
 
     def do_POST(self) -> None:  # noqa: N802
         if not _auth_ok(self):
-            return self._json(401, {'error': 'unauthorized'})
+            return self._json(401, {'error': 'unauthorized', 'errorCode': 'unauthorized'})
         parsed = urlparse(self.path)
         if parsed.path != '/v1/copilot/events':
             return self._json(404, {'error': 'not_found'})
@@ -74,13 +82,13 @@ class Handler(BaseHTTPRequestHandler):
             payload = _body(self)
             required = ('schemaVersion', 'eventId', 'event', 'observedAt')
             if payload.get('schemaVersion') != 1 or any(not payload.get(k) for k in required):
-                return self._json(400, {'error': 'invalid_event'})
+                return self._json(400, {'error': 'invalid_event', 'errorCode': 'invalid_event'})
             created = ingest_event(connect(), payload)
             return self._json(202, {'accepted': True, 'duplicate': not created})
         except ValueError as exc:
-            return self._json(400, {'error': str(exc)})
-        except Exception as exc:
-            return self._json(500, {'error': 'ingest_failed', 'detail': str(exc)})
+            return self._json(400, {'error': str(exc), 'errorCode': str(exc)})
+        except Exception:
+            return self._server_error('ingest_failed')
 
     def log_message(self, *_args: object) -> None:
         return
