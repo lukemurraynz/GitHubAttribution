@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Copilot Cost Attribution Hook Event",
+  "type": "object",
+  "required": ["schemaVersion", "eventId", "event", "observedAt", "source"],
+  "properties": {
+    "schemaVersion": {"type": "integer", "const": 1},
+    "eventId": {"type": "string"},
+    "event": {"type": "string"},
+    "observedAt": {"type": "string", "format": "date-time"},
+    "sessionId": {"type": ["string", "null"]},
+    "user": {"type": ["string", "null"]},
+    "hostnameHash": {"type": ["string", "null"]},
+    "repository": {"type": ["string", "null"]},
+    "branch": {"type": ["string", "null"]},
+    "commit": {"type": ["string", "null"]},
+    "toolName": {"type": ["string", "null"]},
+    "promptChars": {"type": "integer"},
+    "promptSha256": {"type": ["string", "null"]},
+    "toolResultChars": {"type": "integer"},
+    "source": {"type": "string", "const": "copilot-hook"}
+  }
+}

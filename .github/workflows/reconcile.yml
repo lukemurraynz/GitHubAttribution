@@ -1,0 +1,25 @@
+name: Reconcile Copilot AI Credits
+
+on:
+  schedule:
+    - cron: "15 1 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reconcile yesterday
+        env:
+          GITHUB_TOKEN: ${{ secrets.COPILOT_BILLING_TOKEN }}
+        run: |
+          day=$(date -u -d 'yesterday' +%F)
+          python3 -m copilot_cost.cli.main reconcile \
+            --org "${GITHUB_REPOSITORY_OWNER}" \
+            --from "$day" --to "$day" \
+            --repo-file config/repos.txt \
+            --project-map config/repo-projects.json

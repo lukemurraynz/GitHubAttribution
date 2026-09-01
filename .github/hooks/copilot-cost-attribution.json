@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "type": "command",
+        "bash": "./scripts/copilot-cost-hook.sh sessionStart",
+        "powershell": "./scripts/copilot-cost-hook.ps1 sessionStart",
+        "cwd": ".github/hooks",
+        "timeoutSec": 10
+      }
+    ],
+    "sessionEnd": [
+      {
+        "type": "command",
+        "bash": "./scripts/copilot-cost-hook.sh sessionEnd",
+        "powershell": "./scripts/copilot-cost-hook.ps1 sessionEnd",
+        "cwd": ".github/hooks",
+        "timeoutSec": 10
+      }
+    ],
+    "userPromptSubmitted": [
+      {
+        "type": "command",
+        "bash": "./scripts/copilot-cost-hook.sh userPromptSubmitted",
+        "powershell": "./scripts/copilot-cost-hook.ps1 userPromptSubmitted",
+        "cwd": ".github/hooks",
+        "timeoutSec": 10
+      }
+    ],
+    "preToolUse": [
+      {
+        "type": "command",
+        "bash": "./scripts/copilot-cost-hook.sh preToolUse",
+        "powershell": "./scripts/copilot-cost-hook.ps1 preToolUse",
+        "cwd": ".github/hooks",
+        "timeoutSec": 10
+      }
+    ],
+    "postToolUse": [
+      {
+        "type": "command",
+        "bash": "./scripts/copilot-cost-hook.sh postToolUse",
+        "powershell": "./scripts/copilot-cost-hook.ps1 postToolUse",
+        "cwd": ".github/hooks",
+        "timeoutSec": 10
+      }
+    ],
+    "errorOccurred": [
+      {
+        "type": "command",
+        "bash": "./scripts/copilot-cost-hook.sh errorOccurred",
+        "powershell": "./scripts/copilot-cost-hook.ps1 errorOccurred",
+        "cwd": ".github/hooks",
+        "timeoutSec": 10
+      }
+    ]
+  }
+}
