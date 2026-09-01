@@ -1,5 +1,14 @@
 {
-  "my-org/platform-core": "Platform",
-  "my-org/data-platform": "Data",
-  "my-org/agent-platform": "AI Engineering"
+  "REPLACE_ME/platform-api": {
+    "project": "Customer Platform",
+    "costCenter": "Digital"
+  },
+  "REPLACE_ME/data-platform": {
+    "project": "Data Platform",
+    "costCenter": "Data"
+  },
+  "REPLACE_ME/agent-framework": {
+    "project": "AI Engineering",
+    "costCenter": "Platform"
+  }
 }

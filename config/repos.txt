@@ -1,1 +1,5 @@
-# One GitHub repository per line, in owner/repository form.
+# Optional: repositories to query with GitHub's repository-filterable billing usage summary.
+# These rows are contextual only and are NOT treated as authoritative Copilot AI-credit charges.
+# REPLACE_ME/platform-api
+# REPLACE_ME/data-platform
+# REPLACE_ME/agent-framework

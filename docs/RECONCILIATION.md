@@ -1,16 +1,35 @@
 # Reconciliation
 
-The service uses two GitHub billing surfaces:
+## Daily process
 
-1. Organization AI-credit usage: authoritative Copilot credit quantity by day/model/product/user filters.
-2. Organization billing usage summary: repository-filterable usage summary used when GitHub returns Copilot credit rows at repository scope.
+1. Import the organisation's Copilot AI-credit report for the UTC day.
+2. Preserve each billing row by model/product/quantity and the GitHub source endpoint.
+3. Query hook events for the same UTC day.
+4. Group events by user and repository.
+5. Score observed activity:
+   - session duration seconds
+   - prompt count × `COPILOT_COST_PROMPT_WEIGHT`
+   - tool events × `COPILOT_COST_TOOL_WEIGHT`
+6. Allocate each billing row proportionally to those scores.
+7. Preserve the exact imported credit total across allocations.
+8. Surface allocation method and confidence in reports.
 
-The repo summary is treated as exact when a returned usage item is clearly a credit record. Otherwise, the organization AI-credit quantity remains authoritative and is allocated using observed hook telemetry.
+## Reconciliation invariant
 
-Allocation confidence:
+For a given billing row:
 
-- `high`: GitHub returned a repository-scoped credit usage row.
-- `medium`: one repository observed in the relevant billing window.
-- `low`: multiple repositories observed and credits had to be distributed using event share.
+```text
+sum(repository allocations) == imported GitHub AI-credit quantity
+```
 
-Never label the fallback allocation as a GitHub-billed repository amount. It is an internal attribution.
+A variance should only occur when there are no observable repository events, in which case the service leaves the amount unallocated instead of inventing a repository.
+
+## Confidence
+
+- `high`: a billing row maps to exactly one observed repository.
+- `medium`: multiple repositories are observed for the identified user/day.
+- `low`: the billing row is organisation-level and user/repository activity has to be inferred.
+
+## Repository mapping
+
+`config/repo-projects.json` is intentionally external to billing data. This lets teams change project/cost-centre ownership without rewriting the billing ledger.

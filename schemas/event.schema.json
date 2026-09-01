@@ -1,23 +1,24 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Copilot Cost Attribution Hook Event",
+  "$id": "https://example.invalid/github-copilot-cost-attribution/event.schema.json",
+  "title": "CopilotCostAttributionEvent",
   "type": "object",
-  "required": ["schemaVersion", "eventId", "event", "observedAt", "source"],
+  "required": ["schemaVersion", "eventId", "event", "observedAt", "user", "repository"],
   "properties": {
-    "schemaVersion": {"type": "integer", "const": 1},
-    "eventId": {"type": "string"},
+    "schemaVersion": {"const": 1},
+    "eventId": {"type": "string", "minLength": 16},
     "event": {"type": "string"},
     "observedAt": {"type": "string", "format": "date-time"},
     "sessionId": {"type": ["string", "null"]},
-    "user": {"type": ["string", "null"]},
-    "hostnameHash": {"type": ["string", "null"]},
-    "repository": {"type": ["string", "null"]},
+    "user": {"type": "string"},
+    "repository": {"type": "string"},
     "branch": {"type": ["string", "null"]},
     "commit": {"type": ["string", "null"]},
     "toolName": {"type": ["string", "null"]},
-    "promptChars": {"type": "integer"},
+    "hostHash": {"type": ["string", "null"]},
+    "promptChars": {"type": ["integer", "null"], "minimum": 0},
     "promptSha256": {"type": ["string", "null"]},
-    "toolResultChars": {"type": "integer"},
-    "source": {"type": "string", "const": "copilot-hook"}
-  }
+    "toolResultChars": {"type": ["integer", "null"], "minimum": 0}
+  },
+  "additionalProperties": true
 }

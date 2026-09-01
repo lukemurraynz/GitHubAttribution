@@ -1,29 +1,53 @@
 # Architecture
 
 ```text
-Copilot hook
-   |
-   | POST /v1/copilot/events
-   v
-Collector API
-   |
-   v
-Event store
-   |
-   +---- session/repository attribution telemetry
-   |
-   +---- Reconciler <---- GitHub billing API
-   |                         |
-   |                         +-- AI credit usage (authoritative credits)
-   |                         +-- usage summary (repository-filterable)
-   v
-Allocations
-   |
-   +-- repository / user / day / credits / USD / confidence
-   v
-GET /v1/report
+Developer / Copilot CLI
+        |
+        | hook events
+        v
++----------------------+       +---------------------------+
+| Repository hooks     | ----> | Central collector        |
+| session / prompt /   |       | authenticated HTTP        |
+| tool / error events  |       +------------+--------------+
++----------------------+                    |
+                                           v
+                                  +-------------------+
+                                  | Durable event DB  |
+                                  +-------------------+
+                                           ^
+                                           |
+                         +-----------------+------------------+
+                         | GitHub billing reconciliation   |
+                         | organisation AI-credit report  |
+                         +-----------------+------------------+
+                                           |
+                                           v
+                                  +-------------------+
+                                  | Attribution engine |
+                                  | user + day + repo |
+                                  +---------+---------+
+                                            |
+                                            v
+                              +---------------------------+
+                              | repo -> project mapping |
+                              +-------------+-------------+
+                                            |
+                                            v
+                                  API / BI / FinOps views
 ```
 
-The reconciler imports the GitHub organization AI-credit report and optionally queries the repository-filterable billing usage summary for exact repository records. Where an exact repository billing record is not available, the service falls back to allocating authoritative organization credits across observed repository activity for the day. Fallback allocations are explicitly marked medium/low confidence.
+## Source-of-truth boundary
 
-The service never derives a billable AI-credit value from prompt length or tool counts.
+- **GitHub AI-credit usage endpoint**: authoritative quantity and model-level billing record.
+- **Copilot hooks**: contextual telemetry that establishes which repository was active and how much activity occurred.
+- **Attribution engine**: an internal accounting calculation that allocates a user/day/model credit total across observed repositories.
+
+The service never calls its inferred repository amount a direct GitHub invoice charge.
+
+## Why session telemetry matters
+
+The organisation AI-credit endpoint can be filtered by date, user, model and product, but its response is not documented as a repository-scoped Copilot AI-credit ledger. That means repository/project allocation requires an additional context signal. Hooks provide that signal at the point where the developer is actually operating on a repository.
+
+## Production deployment
+
+For an enterprise, keep the hook/event contract and replace the bundled SQLite collector with an Azure Container App or Function behind API Management, fronted by Entra ID or workload authentication, with Event Hubs + ADX/Fabric/SQL for durable analytics.

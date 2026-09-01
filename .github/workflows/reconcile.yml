@@ -1,9 +1,14 @@
-name: Reconcile Copilot AI Credits
+name: Reconcile GitHub Copilot AI Credits
 
 on:
   schedule:
-    - cron: "15 1 * * *"
+    - cron: '15 2 * * *'
   workflow_dispatch:
+    inputs:
+      date:
+        description: UTC date to reconcile (YYYY-MM-DD)
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -13,13 +18,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Reconcile yesterday
+      - name: Determine date
+        id: day
+        shell: bash
+        run: |
+          if [ -n '${{ inputs.date }}' ]; then
+            echo "date=${{ inputs.date }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "date=$(date -u -d 'yesterday' +%F)" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Reconcile
         env:
           GITHUB_TOKEN: ${{ secrets.COPILOT_BILLING_TOKEN }}
         run: |
-          day=$(date -u -d 'yesterday' +%F)
           python3 -m copilot_cost.cli.main reconcile \
             --org "${GITHUB_REPOSITORY_OWNER}" \
-            --from "$day" --to "$day" \
+            --from "${{ steps.day.outputs.date }}" \
+            --to "${{ steps.day.outputs.date }}" \
             --repo-file config/repos.txt \
+            --user-file config/users.txt \
             --project-map config/repo-projects.json

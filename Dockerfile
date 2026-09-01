@@ -1,7 +1,6 @@
-FROM python:3.13-slim
+FROM python:3.12-slim
 WORKDIR /app
-COPY . .
-RUN mkdir -p /app/data
-ENV PYTHONUNBUFFERED=1 PYTHONPATH=/app
+COPY . /app
+ENV PYTHONUNBUFFERED=1
 EXPOSE 8080
-CMD ["python","server.py"]
+CMD ["python", "-m", "copilot_cost.service.server"]

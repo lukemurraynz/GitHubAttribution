@@ -3,10 +3,7 @@ services:
     build: .
     ports:
       - "8080:8080"
-    environment:
-      COPILOT_COST_DB: /app/data/copilot-cost.sqlite3
-      COPILOT_COST_INGEST_KEY: ${COPILOT_COST_INGEST_KEY:-change-me}
+    env_file:
+      - .env
     volumes:
-      - copilot-cost-data:/app/data
-volumes:
-  copilot-cost-data:
+      - ./data:/app/data

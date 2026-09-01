@@ -1,0 +1,4 @@
+# Put GitHub usernames for organisation-managed Copilot licences here.
+# Use one login per line.
+# alice
+# bob
