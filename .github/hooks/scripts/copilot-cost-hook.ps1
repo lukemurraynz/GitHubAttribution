@@ -7,8 +7,11 @@ $raw = [Console]::In.ReadToEnd()
 try { $payload = if ($raw) { $raw | ConvertFrom-Json } else { [pscustomobject]@{} } }
 catch { $payload = [pscustomobject]@{} }
 
-function Invoke-Git([string[]]$Args) {
-  try { return ((& git @Args 2>$null) | Out-String).Trim() } catch { return '' }
+# Note: the parameter must not be named $Args — that is a reserved automatic
+# variable in PowerShell, and binding to it silently drops every argument
+# (git then runs bare and prints its usage text as the "result").
+function Invoke-Git([string[]]$GitArgs) {
+  try { return ((& git @GitArgs 2>$null) | Out-String).Trim() } catch { return '' }
 }
 
 $cwd = if ($payload.cwd) { [string]$payload.cwd } else { (Get-Location).Path }
@@ -76,6 +79,10 @@ if ($env:COPILOT_COST_TELEMETRY_ENDPOINT) {
   try {
     # No secrets: send telemetry with no auth header. The collector is trusted
     # via its network boundary (IP-restricted ingress / private network).
-    Invoke-RestMethod -Uri $env:COPILOT_COST_TELEMETRY_ENDPOINT -Method Post -ContentType 'application/json' -Body ($record | ConvertTo-Json -Compress) -TimeoutSec ([int]($env:COPILOT_COST_TELEMETRY_TIMEOUT_SEC ?? 3)) | Out-Null
+    # Windows PowerShell 5.1 has no ?? operator, so resolve the timeout with
+    # an explicit default instead.
+    $timeoutSec = 3
+    if ($env:COPILOT_COST_TELEMETRY_TIMEOUT_SEC) { $timeoutSec = [int]$env:COPILOT_COST_TELEMETRY_TIMEOUT_SEC }
+    Invoke-RestMethod -Uri $env:COPILOT_COST_TELEMETRY_ENDPOINT -Method Post -ContentType 'application/json' -Body ($record | ConvertTo-Json -Compress) -TimeoutSec $timeoutSec | Out-Null
   } catch { }
 }

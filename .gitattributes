@@ -1,0 +1,6 @@
+# Deterministic line endings for hook scripts: bash breaks on CRLF, Windows
+# PowerShell expects CRLF. Without this, a consuming repo on Windows with
+# core.autocrlf=true checks out .sh files with CRLF and every hook event fails.
+*.sh  text eol=lf
+*.ps1 text eol=crlf
+*.py  text eol=lf
