@@ -74,8 +74,8 @@ $record | ConvertTo-Json -Compress | Add-Content -Encoding UTF8 -Path (Join-Path
 
 if ($env:COPILOT_COST_TELEMETRY_ENDPOINT) {
   try {
-    $headers = @{}
-    if ($env:COPILOT_COST_INGEST_KEY) { $headers['Authorization'] = "Bearer $env:COPILOT_COST_INGEST_KEY" }
-    Invoke-RestMethod -Uri $env:COPILOT_COST_TELEMETRY_ENDPOINT -Method Post -Headers $headers -ContentType 'application/json' -Body ($record | ConvertTo-Json -Compress) -TimeoutSec ([int]($env:COPILOT_COST_TELEMETRY_TIMEOUT_SEC ?? 3)) | Out-Null
+    # No secrets: send telemetry with no auth header. The collector is trusted
+    # via its network boundary (IP-restricted ingress / private network).
+    Invoke-RestMethod -Uri $env:COPILOT_COST_TELEMETRY_ENDPOINT -Method Post -ContentType 'application/json' -Body ($record | ConvertTo-Json -Compress) -TimeoutSec ([int]($env:COPILOT_COST_TELEMETRY_TIMEOUT_SEC ?? 3)) | Out-Null
   } catch { }
 }

@@ -150,6 +150,39 @@ class PlatformTests(unittest.TestCase):
             if saved is not None:
                 os.environ['GITHUB_TOKEN'] = saved
 
+    def test_token_source_env_path(self):
+        """resolve_github_token returns GITHUB_TOKEN when set (no Key Vault)."""
+        from copilot_cost.service.token_source import resolve_github_token
+        saved = os.environ.get('GITHUB_TOKEN')
+        os.environ['GITHUB_TOKEN'] = 'some-token'
+        try:
+            self.assertEqual(resolve_github_token(), 'some-token')
+        finally:
+            if saved is None:
+                os.environ.pop('GITHUB_TOKEN', None)
+            else:
+                os.environ['GITHUB_TOKEN'] = saved
+
+    def test_token_source_no_source_fails_cleanly(self):
+        """With neither GITHUB_TOKEN nor Key Vault config, resolution raises a
+        clear SystemExit naming both fallbacks (offline, no network)."""
+        from copilot_cost.service.token_source import resolve_github_token
+        saved_token = os.environ.pop('GITHUB_TOKEN', None)
+        saved_url = os.environ.pop('COPILOT_COST_KEYVAULT_URL', None)
+        saved_secret = os.environ.pop('COPILOT_COST_KEYVAULT_SECRET', None)
+        try:
+            with self.assertRaises(SystemExit) as cm:
+                resolve_github_token()
+            self.assertIn('GITHUB_TOKEN', str(cm.exception))
+            self.assertIn('Key Vault', str(cm.exception))
+        finally:
+            if saved_token is not None:
+                os.environ['GITHUB_TOKEN'] = saved_token
+            if saved_url is not None:
+                os.environ['COPILOT_COST_KEYVAULT_URL'] = saved_url
+            if saved_secret is not None:
+                os.environ['COPILOT_COST_KEYVAULT_SECRET'] = saved_secret
+
 
 if __name__ == '__main__':
     unittest.main()

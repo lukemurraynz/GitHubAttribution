@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.43.8.12551",
-      "templateHash": "13291992867689002158"
+      "templateHash": "9652367255522278327"
     }
   },
   "functions": [
@@ -30,7 +30,8 @@
   ],
   "parameters": {
     "name": {
-      "type": "string"
+      "type": "string",
+      "defaultValue": "ghcc-collector"
     },
     "location": {
       "type": "string",
@@ -63,6 +64,10 @@
     "tags": {
       "type": "object",
       "defaultValue": {}
+    },
+    "allowedIngressIpCidr": {
+      "type": "string",
+      "defaultValue": ""
     },
     "secretName": {
       "type": "string",
@@ -110,7 +115,7 @@
       "scope": "[resourceId('Microsoft.ContainerRegistry/registries', variables('acrName_'))]",
       "name": "[guid(resourceId('Microsoft.ContainerRegistry/registries', variables('acrName_')), 'acrpull')]",
       "properties": {
-        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed8-4680-a7ca-43fe172d538d')]",
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')]",
         "principalId": "[reference('mi').principalId]",
         "principalType": "ServicePrincipal"
       },
@@ -174,7 +179,10 @@
     "share": {
       "type": "Microsoft.Storage/storageAccounts/fileServices/shares",
       "apiVersion": "2023-05-01",
-      "name": "[format('{0}/default/{1}', variables('stgName'), variables('shareName'))]"
+      "name": "[format('{0}/default/{1}', variables('stgName'), variables('shareName'))]",
+      "dependsOn": [
+        "stg"
+      ]
     },
     "env": {
       "type": "Microsoft.App/managedEnvironments",
@@ -207,10 +215,11 @@
         "configuration": {
           "activeRevisionsMode": "Single",
           "ingress": {
-            "external": true,
+            "external": "[not(empty(parameters('allowedIngressIpCidr')))]",
             "targetPort": 8080,
             "transport": "http",
-            "allowInsecure": false
+            "allowInsecure": false,
+            "ipSecurityRestrictions": "[if(not(empty(parameters('allowedIngressIpCidr'))), createArray(createObject('name', 'allow-ingest', 'description', 'Authorized hook egress CIDR', 'ipAddressRange', parameters('allowedIngressIpCidr'), 'action', 'Allow')), createArray())]"
           },
           "secrets": [
             {

@@ -97,11 +97,19 @@ Reserve classic tokens for this narrow use; fine-grained is preferred.
 ## 4. Configure the collector and hooks
 
 ### 4a. Collector environment
-Copy `.env.example` → `.env` and set at minimum:
+Copy `.env.example` → `.env`. The **hooks send telemetry with no secret**, so the
+collector is trusted by its **network boundary** (IP-restricted / internal), not
+a per-hook bearer token:
 
 ```ini
-COPILOT_COST_INGEST_KEY=<long-random-secret>   # protect the ingest endpoint
+# No COPILOT_COST_INGEST_KEY by default: keyless collect, protected by ingress.
+# Set it ONLY if you prefer bearer auth (then every hook must hold the key too).
 COPILOT_COST_DB=/app/data/copilot-cost.sqlite3
+
+# For the deployed collector + reconcile, the GitHub token is read at runtime
+# from Key Vault via the managed identity (set when running in Azure):
+# COPILOT_COST_KEYVAULT_URL=https://<vault>.vault.azure.net
+# COPILOT_COST_KEYVAULT_SECRET=<secret-name>
 ```
 
 Run it:
@@ -119,11 +127,13 @@ want to attribute:
 1. Copy `.github/hooks/copilot-cost-attribution.json` and
    `.github/hooks/scripts/` from this project into the target repo.
 2. Commit them to the **default branch** (required for cloud agents).
-3. Set in the developer environment / repo environment:
+3. Set in the developer environment / repo environment (the hook sends **no
+   secret** — it only needs the collector's HTTPS URL; see `docs/SECURITY.md`):
    ```text
-   COPILOT_COST_TELEMETRY_ENDPOINT=http://<collector-host>:8080/v1/copilot/events
-   COPILOT_COST_INGEST_KEY=<same shared secret as the collector>
+   COPILOT_COST_TELEMETRY_ENDPOINT=https://<collector-host>/v1/copilot/events
    ```
+   Use an **`https://`** endpoint in production so the (secret-free) telemetry
+   is not sent in cleartext.
 4. Verify: run one Copilot session in that repo, then check
    `GET /v1/report/repositories?from=...&to=...` — you should see the repo
    from hook events even before billing data arrives.
@@ -138,6 +148,9 @@ Populate config and run the sync:
 # config/users.txt — one GitHub login per line whose Copilot usage you import
 # config/repo-projects.json — map owner/repo -> project + cost centre
 
+# The GitHub token for collector->GitHub is resolved at runtime from GITHUB_TOKEN
+# (local dev) OR from Key Vault via the collector's managed identity when deployed:
+#   export COPILOT_COST_KEYVAULT_URL=... COPILOT_COST_KEYVAULT_SECRET=...
 export GITHUB_TOKEN=<reconciliation token from step 3>
 python3 -m copilot_cost.cli.main reconcile \
   --org ORG \
@@ -222,9 +235,14 @@ For a **GitHub Enterprise Cloud** account that manages Copilot centrally:
   including fine-grained PATs, classic PATs, and GitHub App client secrets.
 - Keep the GitHub App private key (`.pem`) out of the repo and off shared
   machines; consider a secret manager.
-- The bundled collector is a reference implementation (Bearer secret, no TLS/
-  rate limiting). For production, front it with an authenticated reverse proxy
-  (or move to a durable store per `ARCHITECTURE.md`), and enable retention
-  trimming on the SQLite `events` table per `SECURITY.md`.
-- The ingest endpoint is unauthenticated-by-default if
-  `COPILOT_COST_INGEST_KEY` is unset — always set it.
+- **Hooks carry no secret** — the collector must be protected by its network
+  boundary, so **restrict the Container Apps ingress** to the CIDR that may
+  POST (or keep it internal-only). Never expose a secret-free collector to the
+  public internet.
+- The **GitHub token is never in the hook or the image** — the deployed
+  collector reads it from **Key Vault via its managed identity** (granted
+  *Key Vault Secrets User*).
+- The bundled collector is a reference implementation. For production, front it
+  with an authenticated reverse proxy / restricted ingress (see § collector
+  deployment), and enable retention trimming on the SQLite `events` table per
+  `SECURITY.md`.

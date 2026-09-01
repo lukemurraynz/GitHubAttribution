@@ -10,8 +10,18 @@ from .reporting import report_repositories, report_projects, report_users, recon
 
 
 def _auth_ok(handler: BaseHTTPRequestHandler) -> bool:
+    """Authenticate ingest when a shared key is configured.
+
+    The design is deliberately key-optional: the hook sends telemetry with no
+    secret (see .github/hooks). When COPILOT_COST_INGEST_KEY is set, only
+    that bearer header is accepted. When it is UNSET/empty, ingest is open to
+    whoever can reach the endpoint — SECURITY: that mode is only safe behind a
+    network boundary (IP-restricted ingress / private network). The azd
+    deployment must restrict Container Apps ingress accordingly.
+    """
     expected = os.getenv('COPILOT_COST_INGEST_KEY')
     if not expected:
+        # Keyless mode: trust the network boundary. Do NOT expose publicly.
         return True
     return handler.headers.get('Authorization', '') == f'Bearer {expected}'
 

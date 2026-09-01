@@ -7,6 +7,7 @@ from datetime import date
 from ..service.db import connect
 from ..service.github import GitHubClient
 from ..service.reconcile import reconcile_range
+from ..service.token_source import resolve_github_token
 
 
 def main() -> None:
@@ -23,8 +24,13 @@ def main() -> None:
     r.add_argument('--user-file')
     args = parser.parse_args()
 
-    if not os.getenv('GITHUB_TOKEN'):
-        raise SystemExit('GITHUB_TOKEN is required')
+    # Resolve the GitHub token: from GITHUB_TOKEN env for local dev, or from
+    # Azure Key Vault (via the collector's managed identity) when deployed.
+    try:
+        github_token = resolve_github_token()
+    except SystemExit as exc:
+        raise SystemExit(str(exc)) from exc
+
     users = list(args.user)
     if args.user_file and os.path.exists(args.user_file):
         with open(args.user_file, encoding='utf-8') as handle:
@@ -37,7 +43,7 @@ def main() -> None:
             repos.extend(line.strip() for line in handle if line.strip() and not line.lstrip().startswith('#'))
     repos = list(dict.fromkeys(repos))
     con = connect()
-    gh = GitHubClient(os.environ['GITHUB_TOKEN'], os.getenv('GITHUB_API_URL', 'https://api.github.com'), os.getenv('GITHUB_API_VERSION', '2026-03-10'))
+    gh = GitHubClient(github_token, os.getenv('GITHUB_API_URL', 'https://api.github.com'), os.getenv('GITHUB_API_VERSION', '2026-03-10'))
     result = reconcile_range(con, gh, args.org, date.fromisoformat(args.start), date.fromisoformat(args.end), args.project_map if os.path.exists(args.project_map) else None, repos, users)
     print(json.dumps(result, indent=2))
 

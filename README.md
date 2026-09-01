@@ -32,14 +32,13 @@ Copy `.github/hooks/copilot-cost-attribution.json` and `.github/hooks/scripts/` 
 Set:
 
 ```text
-COPILOT_COST_TELEMETRY_ENDPOINT=http://collector:8080/v1/copilot/events
-COPILOT_COST_INGEST_KEY=<shared-secret>
+COPILOT_COST_TELEMETRY_ENDPOINT=https://collector.example.com/v1/copilot/events
 ```
 
-> The hook never stores the ingest key — it is read from the environment and
-> sent only in the `Authorization` header (see `docs/SECURITY.md`). Use an
-> **`https://`** endpoint in production so the key is not transmitted in
-> cleartext.
+> The hooks carry **no secret** — they send telemetry with no auth header (see
+> `docs/SECURITY.md`). The collector is trusted by its **network boundary**
+> (IP-restricted / internal ingress), not a per-hook token. Use an **`https://`**
+> endpoint in production.
 
 ### 3. Configure repository → project mapping
 

@@ -12,7 +12,7 @@
 //     Container App and resolved via the managed identity at runtime.
 //   - Image: deployed with a deterministic, non-:latest tag supplied at deploy time.
 
-param name string
+param name string = 'ghcc-collector'
 param location string = resourceGroup().location
 param environmentName string = ''
 param managedIdentityName string = ''
@@ -21,6 +21,12 @@ param acrName string = ''
 param storageAccountName string = ''
 param fileShareName string = ''
 param tags object = {}
+
+// SECURITY: the hook sends telemetry with NO secret (see docs/SECURITY.md). To
+// make that safe, the collector must only be reachable from trusted networks.
+// Set the CIDR (e.g. developer VPN / office egress) that may POST /v1/copilot/events.
+// Empty string = deny all remote ingress (only in-VNet clients).
+param allowedIngressIpCidr string = ''
 
 // Internationalized / non-KV-safe secret name placeholder kept out; the vault
 // secret is created by the "GITHUB_COPILOT_INGEST_KEY" postdeploy step.
@@ -65,7 +71,7 @@ resource acrPullRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(acr.id, 'acrpull')
   scope: acr
   properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed8-4680-a7ca-43fe172d538d') // AcrPull
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d') // AcrPull
     principalId: mi.properties.principalId
     principalType: 'ServicePrincipal'
   }
@@ -116,6 +122,7 @@ resource stg 'Microsoft.Storage/storageAccounts@2023-05-01' = {
 
 resource share 'Microsoft.Storage/storageAccounts/fileServices/shares@2023-05-01' = {
   name: '${stgName}/default/${shareName}'
+  dependsOn: [ stg ]  // explicit parent dependency: name uses a var, so wire it here
 }
 
 // ---------------------------------------------------------------- managed env (Workload Profiles / Consumption)
@@ -128,6 +135,25 @@ resource env 'Microsoft.App/managedEnvironments@2025-07-01' = {
     ]
   }
   tags: tags
+}
+
+// Container Apps environment storage provider: links the Azure Files share to
+// the managed environment. The Container App mounts the share via this provider
+// (Microsoft.App requires an environment-level storage, not a raw share name).
+// The storage account key is computed by ARM here (listKeys) and only lives on
+// the environment storage config — never in the app env, image, or hook.
+var storageKey = stg.listKeys().keys[0].value
+resource envStorage 'Microsoft.App/managedEnvironments/storages@2025-07-01' = {
+  name: shareName
+  parent: env
+  properties: {
+    azureFile: {
+      accountName: stg.name
+      shareName: shareName
+      accessMode: 'ReadWrite'
+      accountKey: storageKey
+    }
+  }
 }
 
 // ---------------------------------------------------------------- container app
@@ -143,10 +169,22 @@ resource app 'Microsoft.App/containerApps@2025-07-01' = {
     configuration: {
       activeRevisionsMode: 'Single'
       ingress: {
-        external: true
+        // Safe-by-default: unless an allowed ingress CIDR is supplied, the
+        // collector is internal-only (VNet). When a CIDR is supplied, expose
+        // it externally but HTTPS-only with an IP allow-list, because the hook
+        // sends telemetry with no secret.
+        external: !empty(allowedIngressIpCidr)
         targetPort: 8080
         transport: 'http'
         allowInsecure: false // HTTPS-only
+        ipSecurityRestrictions: !empty(allowedIngressIpCidr) ? [
+          {
+            name: 'allow-ingest'
+            description: 'Authorized hook egress CIDR'
+            ipAddressRange: allowedIngressIpCidr
+            action: 'Allow'
+          }
+        ] : []
       }
       secrets: [
         {
@@ -204,7 +242,7 @@ resource app 'Microsoft.App/containerApps@2025-07-01' = {
         {
           name: 'data'
           storageType: 'AzureFile'
-          storageName: share.name
+          storageName: shareName  // environment storage provider name (see envStorage)
         }
       ]
     }

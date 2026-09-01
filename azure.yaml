@@ -13,6 +13,7 @@ services:
     project: .
     docker:
       path: ./Dockerfile
+      remoteBuild: true  # build on Azure Container Registry; no local Docker required
     hooks:
       preprovision:
         shell: sh

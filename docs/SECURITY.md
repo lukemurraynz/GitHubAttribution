@@ -6,21 +6,27 @@ The hook package intentionally does not transmit prompt or tool-result content. 
 
 Hostnames are hashed before transmission.
 
-### Hook secret handling (storage guarantee)
+### Hooks carry NO secrets (design guarantee)
 
-The hook **never stores** the ingest key or any token/API key. The `COPILOT_COST_INGEST_KEY` is read from the environment **only at POST time** and placed in the `Authorization` header of the single network request. It is **not** part of the telemetry record and is **never written** to the local `events.jsonl` file or any other log. The locally-persisted record contains only: `schemaVersion`, `eventId`, `event`, `observedAt`, `sessionId`, `user`, `repository`, `branch`, `commit`, `toolName`, `hostHash`, `source`, and (for prompts/tools) `promptChars`/`promptSha256`/`toolResultChars`.
+The hook is **secret-free by design**. It does not read, store, or transmit any token, API key, or secret. The two hook scripts (`.sh` and `.ps1`) build a telemetry record, write it to the local `events.jsonl`, and POST it to the collector **with no `Authorization` header and no credential in the body**. The locally-persisted record contains only: `schemaVersion`, `eventId`, `event`, `observedAt`, `sessionId`, `user`, `repository`, `branch`, `commit`, `toolName`, `hostHash`, `source`, and (for prompts/tools) `promptChars`/`promptSha256`/`toolResultChars`.
 
-Because the key still travels over the network to the collector, **the collector endpoint must use HTTPS** (e.g. the Azure Container Apps deployment in `docs/SETUP-REAL-ORG.md`), never plain HTTP across an untrusted network. The key itself is a shared ingest secret for the collector, not a GitHub token; keep it out of committed `.env` files regardless.
+Because the hook authenticates nothing, the **collector must be protected by its network boundary**, not by a per-hook secret:
+
+- **Safe default (deployed):** the Azure Container Apps collector is **internal-only** (VNet) unless the operator supplies an `allowedIngressIpCidr`. When a CIDR is supplied it is external HTTPS-only with an **IP allow-list**. Never expose a secret-free collector to the public internet.
+- **Optional bearer auth:** the collector can still require a shared `COPILOT_COST_INGEST_KEY` bearer header (if you prefer that model), but that requires every hook to hold the shared secret — which this repo deliberately avoids. Default and recommended: network-boundary trust, no hook secret.
 
 ## Collector
 
-Set `COPILOT_COST_INGEST_KEY` and require an `Authorization: Bearer ...` header. The included server is a reference implementation, not an internet-facing hardened service. Put TLS, authentication, rate limiting and network restrictions in front of it for production.
+The collector API (`POST /v1/copilot/events`, `GET /v1/report*`, `GET /healthz`) is a reference HTTP server. For production, run it behind HTTPS with restricted ingress (see `docs/SETUP-REAL-ORG.md`), an `/healthz` readiness probe, and scale-to-zero to limit cost and surface area.
 
-For a hardened deployment, use the **Azure Container Apps** path (see `docs/SETUP-REAL-ORG.md` § collector deployment): the collector runs behind **HTTPS-only external ingress**, with the ingest key supplied as an **Azure Key Vault secret reference** wired via a **managed identity** (never a plaintext env var), an `/healthz` readiness probe, and scale-to-zero to limit cost and surface area.
+## GitHub token (collector → GitHub)
 
-## GitHub token
+The **collector→GitHub** reconcile authenticates with a token resolved at runtime from, in order:
 
-Use a GitHub App or fine-grained token with the minimum organisation billing permission required to read the AI-credit endpoint. Do not place a token in source control.
+1. the `GITHUB_TOKEN` environment variable (local dev), or
+2. an **Azure Key Vault secret** (`COPILOT_COST_KEYVAULT_URL` + `COPILOT_COST_KEYVAULT_SECRET`) fetched via the collector's **managed identity** (stdlib-only, through the Azure Instance Metadata Service).
+
+So the GitHub token is **never in the hook**, never committed, and never shipped in the image — it lives in Key Vault and the deployed collector reads it with its own managed identity (granted *Key Vault Secrets User*). Use a GitHub App or fine-grained token with the minimum organisation billing permission required to read the AI-credit endpoint.
 
 ## Retention
 

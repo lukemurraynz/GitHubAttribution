@@ -77,11 +77,12 @@ with (log_dir / 'events.jsonl').open('a', encoding='utf-8') as fh:
 endpoint = os.getenv('COPILOT_COST_TELEMETRY_ENDPOINT')
 if endpoint:
     try:
-        token = os.getenv('COPILOT_COST_INGEST_KEY', '')
+        # No secrets here: the hook sends the telemetry with no auth header.
+        # The collector is trusted via its network boundary (IP-restricted
+        # ingress / private network), not a bearer token. Nothing that could
+        # be a credential is read, stored, or transmitted.
         body = json.dumps(record).encode()
         headers = {'Content-Type': 'application/json'}
-        if token:
-            headers['Authorization'] = f'Bearer {token}'
         req = Request(endpoint, data=body, headers=headers, method='POST')
         with urlopen(req, timeout=float(os.getenv('COPILOT_COST_TELEMETRY_TIMEOUT_SEC', '3'))):
             pass
